@@ -1,105 +1,75 @@
-import numpy as np
+import os
 import pandas as pd
-from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import CountVectorizer
 
-def recom(books_user_likes):
-	def get_title_from_index(index):
-		return df[df.index == index]["Title"].values[0]
+# ---------------- LOAD DATASET ----------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CSV_PATH = os.path.join(BASE_DIR, "..", "BookDataset", "Bookz.csv")
 
-	def get_index_from_title(Title):
-		return df[df.Title == Title]["index"].values[0]
+BOOKS_DF = pd.read_csv(CSV_PATH)
 
-	books = pd.read_csv(r"D:\Book_Recommender_System\Bookz.csv")
-	books=books[:1000]
-	df=books
-	img=pd.read_csv(r"D:\Book_Recommender_System\Imagez.csv")
+# Keep dataset size reasonable
+BOOKS_DF = BOOKS_DF.head(1000)
 
+# Normalize column names (important)
+BOOKS_DF.columns = [c.strip() for c in BOOKS_DF.columns]
 
-	features = ['Title','Author','Publisher']
-	for feature in features:
-		df[feature] = df[feature].fillna('')
+# ---------------- DETERMINE TEXT FEATURES SAFELY ----------------
+text_columns = []
 
-	def combine_features(row):
-		try:
-			return row['Title'] +" "+row['Author']+" "+row['Publisher']
-		except:
-			print("Error:", row)
+for col in ["Title", "Book-Title", "book_title"]:
+    if col in BOOKS_DF.columns:
+        TITLE_COL = col
+        text_columns.append(col)
+        break
+else:
+    raise Exception("No Title column found in dataset")
 
-	df["combined_features"] = df.apply(combine_features,axis=1)
+for col in ["Author", "Book-Author", "author"]:
+    if col in BOOKS_DF.columns:
+        text_columns.append(col)
+        break
 
-#Create count matrix from this new combined column
-	cv = CountVectorizer()
-	count_matrix = cv.fit_transform(df["combined_features"])
+for col in ["Genre", "Category", "Subject"]:
+    if col in BOOKS_DF.columns:
+        text_columns.append(col)
+        break
 
-#Compute the Cosine Similarity based on the count_matrix
-	cosine_sim = cosine_similarity(count_matrix) 
+# Fill missing values
+BOOKS_DF[text_columns] = BOOKS_DF[text_columns].fillna("")
 
-#Get index of this book from its title
-	books_index = get_index_from_title(books_user_likes)
-	similar_books = list(enumerate(cosine_sim[books_index]))
+# Combine features
+BOOKS_DF["combined"] = BOOKS_DF[text_columns].agg(" ".join, axis=1)
 
-#Get a list of similar books in descending order of similarity score
-	sorted_similar_books = sorted(similar_books,key=lambda x:x[1],reverse=True)
+# ---------------- VECTORIZE ----------------
+vectorizer = CountVectorizer(stop_words="english")
+count_matrix = vectorizer.fit_transform(BOOKS_DF["combined"])
+similarity = cosine_similarity(count_matrix)
 
-# titles of first 50 books
-	l=[]
-	t=[]
-	i=0
-	for element in sorted_similar_books:
-			l.append(get_title_from_index(element[0]))
-			t.append(get_index_from_title(l[i]))
-			i=i+1
-			if i>9:
-				break
+# ---------------- RECOMMENDATION FUNCTION ----------------
+def recom(book_name):
+    # normalize input
+    query = book_name.lower().replace("’", "'").strip()
 
-	output=l
-	index=t
+    # normalize titles
+    BOOKS_DF["_norm_title"] = (
+        BOOKS_DF[TITLE_COL]
+        .str.lower()
+        .str.replace("’", "'", regex=False)
+        .str.strip()
+    )
 
-	imgg=[]
-	year=[]
-	author=[]
-	final_list=[]
-	for i in index:
-		imgg.append(img["Image-URL-M"][i-1])
-		year.append(books["Year"][i-1])
-		author.append(books["Author"][i-1])
-	for i in range(len(index)):
-		temp=[]
-		temp.append(output[i])
-		temp.append(imgg[i])
-		temp.append(year[i])
-		temp.append(author[i])
-		final_list.append(temp)
-	return final_list
+    # partial / safe match
+    matches = BOOKS_DF[BOOKS_DF["_norm_title"].str.contains(query)]
 
+    if matches.empty:
+        return ["No similar book found. Try another title from dataset."]
 
+    idx = matches.index[0]
 
+    scores = list(enumerate(similarity[idx]))
+    scores = sorted(scores, key=lambda x: x[1], reverse=True)[1:6]
 
-def bookdisp():
-	books=pd.read_csv("Bookz.csv")
-	img=pd.read_csv("Imagez.csv")
+    return [BOOKS_DF.iloc[i[0]][TITLE_COL] for i in scores]
 
-	title=[]
-	imgg=[]
-	year=[]
-	author=[]
-	finallist=[]
-
-	r=np.random.randint(2,1000,10)
-
-	for i in r:
-		title.append(books["Title"][i-1])
-		imgg.append(img["Image-URL-M"][i-1])
-		year.append(books["Year"][i-1])
-		author.append(books["Author"][i-1])
-
-	for i in range(10):
-		temp=[]
-		temp.append(title[i])
-		temp.append(imgg[i])
-		temp.append(year[i])
-		temp.append(author[i])
-		finallist.append(temp)
-
-	return finallist

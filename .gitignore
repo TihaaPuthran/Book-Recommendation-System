@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+.python-version
+
+# macOS
+.DS_Store
+
+# Flask
+instance/
+
+# Junk / backups
+BookDataset 2/
+Main/main.py.save
+Main/recomm.py\
+
